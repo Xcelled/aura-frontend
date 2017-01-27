@@ -45,14 +45,22 @@ namespace AuraFrontend
 
 			using (var t = new ChangingOutput("Repository not valid - redownloading Aura source . . ."))
 			{
-				Repository.Clone(_gitClonePath, _repoDir, new CloneOptions()
+				try
 				{
-					OnTransferProgress = (x) =>
+					Repository.Clone(_gitClonePath, _repoDir, new CloneOptions()
 					{
-						t.PrintProgress((double) x.ReceivedObjects/x.TotalObjects);
-						return true;
-					}
-				});
+						OnTransferProgress = (x) =>
+						{
+							t.PrintProgress((double)x.ReceivedObjects / x.TotalObjects);
+							return true;
+						}
+					});
+				}
+				catch
+				{
+					t.PrintResult(false);
+					throw;
+				}
 
 				t.PrintResult(true);
 
@@ -101,13 +109,18 @@ namespace AuraFrontend
 			{
 				_.FinishLine();
 
-				using (var t = new ChangingOutput("Fetching updates from GitHub . . ."))
+				// Update origin URL and re-initialize repo
+				var origin = repo.Network.Remotes["origin"];
+				if (origin.Url != _gitClonePath)
+					repo.Network.Remotes.Update(origin, r => r.Url = _gitClonePath);
+
+				using (var t = new ChangingOutput("Fetching updates from remote . . ."))
 				{
 					repo.Fetch("origin", new FetchOptions()
 					{
 						OnTransferProgress = (x) =>
 						{
-							t.PrintProgress((double) x.ReceivedObjects/x.TotalObjects);
+							t.PrintProgress((double)x.ReceivedObjects / x.TotalObjects);
 							return true;
 						}
 					});
@@ -121,7 +134,7 @@ namespace AuraFrontend
 				{
 					using (var t = new ChangingOutput("Merging in updates . . ."))
 					{
-						result = repo.Merge(repo.Head.TrackedBranch, new Signature(Environment.UserName, "foo@bar.com", DateTime.Now),
+						result = repo.Merge(repo.Branches["origin/master"], new Signature(Environment.UserName, "foo@bar.com", DateTime.Now),
 							new MergeOptions
 							{
 								CommitOnSuccess = true,
@@ -129,7 +142,7 @@ namespace AuraFrontend
 								MergeFileFavor = MergeFileFavor.Normal,
 								OnCheckoutProgress = (n, processed, total) =>
 								{
-									t.PrintProgress((double) processed/total);
+									t.PrintProgress((double)processed / total);
 								},
 							});
 
@@ -162,7 +175,7 @@ namespace AuraFrontend
 					Console.WriteLine("Rolling back merge...");
 					repo.Reset(currentCommit);
 					recompileNeeded = false;
-					_.PrintResult(false);					
+					_.PrintResult(false);
 				}
 
 				return recompileNeeded;
